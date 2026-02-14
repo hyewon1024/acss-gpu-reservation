@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ACSS GPU Reservation System
 
 🖥️ Real-time GPU resource management and scheduling dashboard for Autonomous Control for Stochastic Systems Lab.
@@ -34,3 +35,7 @@ This app is deployed on Streamlit Community Cloud.
 ## Contact
 
 ACSS Lab - Autonomous Control for Stochastic Systems
+=======
+# acss-gpu-reservation
+acss-gpu-reservation
+>>>>>>> 8241e0f56cc7188afa2ba2dd624fc5f55546f25f
