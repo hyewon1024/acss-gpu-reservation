@@ -1,0 +1,13 @@
+[server]
+# 모든 네트워크 인터페이스에서 접속 허용
+address = "0.0.0.0"
+
+# 포트 설정 (기본값: 8501)
+port = 8501
+
+# 파일 변경 시 자동 재시작
+runOnSave = true
+
+[browser]
+# 브라우저 자동 열기
+gatherUsageStats = false
