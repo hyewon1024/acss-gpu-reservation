@@ -3,8 +3,16 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import altair as alt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from gpu_data import GPUS, USERS, load_reservations, add_reservation, delete_reservations, get_occupancy_stats, check_conflicts
+
+# --- Timezone Setup ---
+KST = timezone(timedelta(hours=9))
+def get_now():
+    return datetime.now(KST)
+
+def get_today():
+    return get_now().date()
 
 st.set_page_config(page_title="ACSS GPUUsage", layout="wide", page_icon="⚙️")
 
@@ -83,7 +91,7 @@ with tab1:
     
     with col_date:
         if 'selected_date' not in st.session_state:
-            st.session_state.selected_date = datetime.today().date()
+            st.session_state.selected_date = get_today()
             
         st.markdown(f"# {st.session_state.selected_date.strftime('%B %Y')}")
         st.caption("📅 Click on a day in the calendar to view details.")
@@ -327,10 +335,11 @@ with tab2:
             user = st.selectbox("User Name", USERS)
             project = st.text_input("Project Name")
         with col2:
-            start_d = st.date_input("Start Date", datetime.today(), key="res_start_date")
-            start_t = st.time_input("Start Time", datetime.now().time(), key="res_start_time")
-            end_d = st.date_input("End Date", datetime.today(), key="res_end_date")
-            end_t = st.time_input("End Time", (datetime.now() + timedelta(hours=2)).time(), key="res_end_time")
+            now_kst = get_now()
+            start_d = st.date_input("Start Date", now_kst.date(), key="res_start_date")
+            start_t = st.time_input("Start Time", now_kst.time(), key="res_start_time")
+            end_d = st.date_input("End Date", now_kst.date(), key="res_end_date")
+            end_t = st.time_input("End Time", (now_kst + timedelta(hours=2)).time(), key="res_end_time")
             
         st.divider()
         gpu_type = st.radio("Select GPU Type", ["RTX 4090", "H100"], horizontal=True)
@@ -348,12 +357,12 @@ with tab2:
         submitted = st.form_submit_button("Check Availability")
         
     if submitted:
-        start_dt = datetime.combine(start_d, start_t)
-        end_dt = datetime.combine(end_d, end_t)
-        now = datetime.now()
+        start_dt = datetime.combine(start_d, start_t).replace(tzinfo=KST)
+        end_dt = datetime.combine(end_d, end_t).replace(tzinfo=KST)
+        now = get_now()
         
         if start_dt < now - timedelta(minutes=10):
-            st.error(f"❌ Error: Start time must be in the future. (Current time: {now.strftime('%H:%M')})")
+            st.error(f"❌ Error: Start time must be in the future. (Current KST: {now.strftime('%H:%M')})")
         elif start_dt >= end_dt:
             st.error("❌ Error: End time must be after Start time.")
         else:
