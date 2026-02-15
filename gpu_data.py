@@ -48,8 +48,8 @@ def load_reservations():
     init_db()
     try:
         df = pd.read_csv(DATA_FILE)
-        df['Start'] = pd.to_datetime(df['Start'])
-        df['End'] = pd.to_datetime(df['End'])
+        df['Start'] = pd.to_datetime(df['Start']).dt.tz_localize(None)
+        df['End'] = pd.to_datetime(df['End']).dt.tz_localize(None)
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -61,8 +61,8 @@ def check_conflicts(gpu_id, start_time, end_time):
     
     gpu_res = df[df['GPU_ID'] == gpu_id]
     overlaps = gpu_res[
-        (gpu_res['Start'] < end_time) & 
-        (gpu_res['End'] > start_time)
+        (pd.to_datetime(gpu_res['Start']).dt.tz_localize(None) < pd.to_datetime(end_time).tz_localize(None)) & 
+        (pd.to_datetime(gpu_res['End']).dt.tz_localize(None) > pd.to_datetime(start_time).tz_localize(None))
     ]
     
     conflicts = []
@@ -114,12 +114,12 @@ def get_occupancy_stats(target_date):
     if df.empty:
         return {"RTX 4090": 0.0, "H100": 0.0}
         
-    day_start = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0)
-    day_end = day_start + timedelta(days=1)
+    day_start = pd.to_datetime(target_date).replace(hour=0, minute=0, second=0).tz_localize(None)
+    day_end = day_start + pd.Timedelta(days=1)
     
     todays_res = df[
-        (df['Start'] < day_end) & 
-        (df['End'] > day_start)
+        (pd.to_datetime(df['Start']).dt.tz_localize(None) < day_end) & 
+        (pd.to_datetime(df['End']).dt.tz_localize(None) > day_start)
     ]
     
     if todays_res.empty:

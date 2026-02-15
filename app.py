@@ -14,7 +14,7 @@ def get_now():
 def get_today():
     return get_now().date()
 
-st.set_page_config(page_title="ACSS GPUUsage", layout="wide", page_icon="⚙️")
+st.set_page_config(page_title="ACSS GPUUsage v1.0.1", layout="wide", page_icon="⚙️")
 
 # --- Custom CSS (Light/Standard Theme) ---
 st.markdown("""
@@ -119,14 +119,16 @@ with tab1:
         
         cal_data = []
         for d in dates_in_month:
-            day_start = pd.Timestamp(d)
-            day_end = day_start + timedelta(days=1)
+            # Force naive pd.Timestamp for comparison with datetime64[ns]
+            day_start = pd.to_datetime(d).tz_localize(None)
+            day_end = day_start + pd.Timedelta(days=1)
             
             count = 0
             users = []
             if not df.empty:
                 matches = df[
-                    (df['Start'] < day_end) & (df['End'] > day_start)
+                    (pd.to_datetime(df['Start']).dt.tz_localize(None) < day_end) & 
+                    (pd.to_datetime(df['End']).dt.tz_localize(None) > day_start)
                 ]
                 count = len(matches)
                 users = matches['User'].unique().tolist()
@@ -196,8 +198,8 @@ with tab1:
     
     if not df.empty:
         day_df = df[
-            (df['Start'] < day_end) & 
-            (df['End'] > day_start)
+            (pd.to_datetime(df['Start']).dt.tz_localize(None) < day_end) & 
+            (pd.to_datetime(df['End']).dt.tz_localize(None) > day_start)
         ].copy()
         
         if not day_df.empty:
