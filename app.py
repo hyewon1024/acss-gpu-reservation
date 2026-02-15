@@ -38,6 +38,7 @@ st.markdown("""
         font-weight: 600;
         border: 1px solid #d0d0d0;
         margin-bottom: 5px;
+        font-size: 0.9rem !important; /* Smaller text for tabs */
     }
     .stTabs [aria-selected="true"] {
         background-color: #0f3460;
@@ -326,10 +327,10 @@ with tab2:
             user = st.selectbox("User Name", USERS)
             project = st.text_input("Project Name")
         with col2:
-            start_d = st.date_input("Start Date", datetime.today())
-            start_t = st.time_input("Start Time", datetime.now().time())
-            end_d = st.date_input("End Date", datetime.today())
-            end_t = st.time_input("End Time", (datetime.now() + timedelta(hours=2)).time())
+            start_d = st.date_input("Start Date", datetime.today(), key="res_start_date")
+            start_t = st.time_input("Start Time", datetime.now().time(), key="res_start_time")
+            end_d = st.date_input("End Date", datetime.today(), key="res_end_date")
+            end_t = st.time_input("End Time", (datetime.now() + timedelta(hours=2)).time(), key="res_end_time")
             
         st.divider()
         gpu_type = st.radio("Select GPU Type", ["RTX 4090", "H100"], horizontal=True)
@@ -349,8 +350,12 @@ with tab2:
     if submitted:
         start_dt = datetime.combine(start_d, start_t)
         end_dt = datetime.combine(end_d, end_t)
-        if start_dt >= end_dt:
-            st.error("End time must be after Start time.")
+        now = datetime.now()
+        
+        if start_dt < now - timedelta(minutes=10):
+            st.error(f"❌ Error: Start time must be in the future. (Current time: {now.strftime('%H:%M')})")
+        elif start_dt >= end_dt:
+            st.error("❌ Error: End time must be after Start time.")
         else:
             conflicts = check_conflicts(gpu_id_to_book, start_dt, end_dt)
             if not conflicts:

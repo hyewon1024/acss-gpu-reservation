@@ -120,23 +120,19 @@ def get_occupancy_stats(target_date):
     todays_res = df[
         (df['Start'] < day_end) & 
         (df['End'] > day_start)
-    ].copy()
+    ]
     
     if todays_res.empty:
         return {"RTX 4090": 0.0, "H100": 0.0}
 
-    todays_res['Calc_Start'] = todays_res['Start'].clip(lower=day_start)
-    todays_res['Calc_End'] = todays_res['End'].clip(upper=day_end)
-    todays_res['Duration_Sec'] = (todays_res['Calc_End'] - todays_res['Calc_Start']).dt.total_seconds()
-    
     stats = {}
     
-    rtx_total_sec = todays_res[todays_res['GPU_Type'] == 'RTX 4090']['Duration_Sec'].sum()
-    rtx_capacity = 4 * 24 * 3600
-    stats['RTX 4090'] = min(100.0, (rtx_total_sec / rtx_capacity) * 100)
+    # RTX 4090 occupancy: (Unique RTX servers with reservations / 4) * 100
+    rtx_reserved_count = todays_res[todays_res['GPU_Type'] == 'RTX 4090']['GPU_ID'].nunique()
+    stats['RTX 4090'] = (rtx_reserved_count / 4.0) * 100
     
-    h100_total_sec = todays_res[todays_res['GPU_Type'] == 'H100']['Duration_Sec'].sum()
-    h100_capacity = 2 * 24 * 3600
-    stats['H100'] = min(100.0, (h100_total_sec / h100_capacity) * 100)
+    # H100 occupancy: (Unique H100 servers with reservations / 2) * 100
+    h100_reserved_count = todays_res[todays_res['GPU_Type'] == 'H100']['GPU_ID'].nunique()
+    stats['H100'] = (h100_reserved_count / 2.0) * 100
     
     return stats
