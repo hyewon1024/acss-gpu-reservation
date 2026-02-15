@@ -119,8 +119,8 @@ with tab1:
         
         cal_data = []
         for d in dates_in_month:
-            day_start = d
-            day_end = d + timedelta(days=1)
+            day_start = pd.Timestamp(d)
+            day_end = day_start + timedelta(days=1)
             
             count = 0
             users = []
