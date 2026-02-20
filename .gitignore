@@ -14,6 +14,7 @@ ENV/
 
 # Data
 *.csv
+.streamlit/secrets.toml
 data/
 
 # IDE
