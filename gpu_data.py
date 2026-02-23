@@ -2,7 +2,8 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Resource Definitions ---
 GPUS = [
@@ -14,145 +15,129 @@ GPUS = [
     {"id": "H100-02", "type": "H100"},
 ]
 
-# --- User List (ACSS LAB) ---
+# --- User List ---
 USERS = [
-    "Mincheol Kang (강민철)",
-    "Jeonghyeon Noh (노정현)",
-    "Nakgyu Yang (양낙규)",
-    "Jeongyong Yang (양정용)",
-    "Sunmin Yoo (유선민)",
-    "KwangBin Lee (이광빈)",
-    "Yechan Lee (이예찬)",
-    "Seunghwan 장승환",
-    "Yejun Jang (장예준)",
-    "Minseok Jeong (정민석)",
-    "Jungyo Jung (정준교)",
-    "Hyeongmin Choe (최형민)",
-    "Hyewon Choi (최혜원)",
-    "Doyoung Heo (허도영)"
+    "Mincheol Kang (강민철)", "Jeonghyeon Noh (노정현)", "Nakgyu Yang (양낙규)",
+    "Jeongyong Yang (양정용)", "Sunmin Yoo (유선민)", "KwangBin Lee (이광빈)",
+    "Yechan Lee (이예찬)", "Seunghwan 장승환", "Yejun Jang (장예준)",
+    "Minseok Jeong (정민석)", "Jungyo Jung (정준교)", "Hyeongmin Choe (최형민)",
+    "Hyewon Choi (최혜원)", "Doyoung Heo (허도영)"
 ]
 
-# Initialize Google Sheets Connection
-def get_connection():
-    # Attempt to get configuration from secrets
-    config = st.secrets.get("connections", {}).get("gsheets", {})
-    url = config.get("spreadsheet") or config.get("url")
-    
-    if not url:
-        st.error("Google Sheets URL not found in secrets.toml ([connections.gsheets])")
-        return None
-    
+# Initialize GSpread Connection
+def get_gspread_client():
     try:
-        # Try passing both to be absolutely sure
-        return st.connection("gsheets", type=GSheetsConnection, spreadsheet=url, url=url)
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        # Convert streamlit secrets to dict format expected by gspread
+        creds_dict = {
+            "type": st.secrets["connections"]["gsheets"]["type"],
+            "project_id": st.secrets["connections"]["gsheets"]["project_id"],
+            "private_key_id": st.secrets["connections"]["gsheets"]["private_key_id"],
+            "private_key": st.secrets["connections"]["gsheets"]["private_key"].replace("\\n", "\n"),
+            "client_email": st.secrets["connections"]["gsheets"]["client_email"],
+            "client_id": st.secrets["connections"]["gsheets"]["client_id"],
+            "auth_uri": st.secrets["connections"]["gsheets"]["auth_uri"],
+            "token_uri": st.secrets["connections"]["gsheets"]["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["connections"]["gsheets"]["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": st.secrets["connections"]["gsheets"]["client_x509_cert_url"]
+        }
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {e}")
-        return st.connection("gsheets", type=GSheetsConnection)
+        st.error(f"Failed to authorize Google Sheets: {e}")
+        return None
 
-conn = get_connection()
+def get_worksheet():
+    client = get_gspread_client()
+    if not client: return None
+    try:
+        url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        sh = client.open_by_url(url)
+        return sh.get_worksheet(0) # First sheet
+    except Exception as e:
+        st.error(f"Failed to open spreadsheet: {e}")
+        return None
 
 def load_reservations():
-    if conn is None:
+    ws = get_worksheet()
+    if ws is None:
         return pd.DataFrame(columns=["User", "GPU_ID", "GPU_Type", "Start", "End", "Project"])
     try:
-        # TTL set to 0 to ensure we always get the latest data for reservations
-        df = conn.read(ttl=0)
-        if df is not None and not df.empty:
-            # Ensure proper datetime conversion
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+        if not df.empty:
             df['Start'] = pd.to_datetime(df['Start']).dt.tz_localize(None)
             df['End'] = pd.to_datetime(df['End']).dt.tz_localize(None)
         else:
             df = pd.DataFrame(columns=["User", "GPU_ID", "GPU_Type", "Start", "End", "Project"])
         return df
     except Exception as e:
-        st.error(f"Error loading data from Google Sheets: {e}")
+        st.error(f"Error loading data: {e}")
         return pd.DataFrame(columns=["User", "GPU_ID", "GPU_Type", "Start", "End", "Project"])
 
 def check_conflicts(gpu_id, start_time, end_time, df=None):
     if df is None:
         df = load_reservations()
-        
-    if df.empty:
-        return []
+    if df.empty: return []
     
     gpu_res = df[df['GPU_ID'] == gpu_id]
     overlaps = gpu_res[
         (gpu_res['Start'] < pd.to_datetime(end_time).tz_localize(None)) & 
         (gpu_res['End'] > pd.to_datetime(start_time).tz_localize(None))
     ]
-    
-    conflicts = []
-    for _, row in overlaps.iterrows():
-        conflicts.append(f"{row['User']} ({row['Project']})")
-        
-    return conflicts
+    return [f"{row['User']} ({row['Project']})" for _, row in overlaps.iterrows()]
 
 def add_reservation(user, gpu_id, start_time, end_time, project, force=False):
-    # One read to rule them all
     df = load_reservations()
-    
     if not force:
         conflicts = check_conflicts(gpu_id, start_time, end_time, df=df)
-        if conflicts:
-            return False, f"Conflict detected with: {', '.join(conflicts)}"
-        
-    gpu_type = next((g['type'] for g in GPUS if g['id'] == gpu_id), "Unknown")
+        if conflicts: return False, f"Conflict detected: {', '.join(conflicts)}"
     
-    new_entry = pd.DataFrame([{
-        "User": user,
-        "GPU_ID": gpu_id,
-        "GPU_Type": gpu_type,
-        "Start": start_time.strftime('%Y-%m-%d %H:%M:%S'),
-        "End": end_time.strftime('%Y-%m-%d %H:%M:%S'),
-        "Project": project
-    }])
+    gpu_type = next((g['type'] for g in GPUS if g['id'] == gpu_id), "Unknown")
+    row = [
+        user, gpu_id, gpu_type, 
+        start_time.strftime('%Y-%m-%d %H:%M:%S'), 
+        end_time.strftime('%Y-%m-%d %H:%M:%S'), 
+        project
+    ]
     
     try:
-        updated_df = pd.concat([df, new_entry], ignore_index=True)
-        conn.update(data=updated_df)
-        return True, "Reservation successful!"
+        ws = get_worksheet()
+        if ws:
+            ws.append_row(row)
+            return True, "Reservation successful!"
+        return False, "Could not access sheet for writing."
     except Exception as e:
-        return False, f"Error saving to Google Sheets: {e}"
+        return False, f"Error saving to Sheet: {e}"
 
 def delete_reservations(indices):
     try:
-        df = load_reservations()
-        if df.empty:
-            return False, "No data to delete."
+        ws = get_worksheet()
+        if not ws: return False, "Could not access sheet."
         
-        # Drop the selected rows
-        df = df.drop(indices).reset_index(drop=True)
-        
-        # update() will overwrite the entire sheet with the new dataframe
-        conn.update(data=df)
+        # indices are 0-based from dataframe, gspread rows are 1-based (and header is row 1)
+        # So row to delete is index + 2
+        # Delete in reverse to avoid index shifting
+        for idx in sorted(indices, reverse=True):
+            ws.delete_rows(idx + 2)
         return True, "Selected reservations deleted."
     except Exception as e:
-        return False, f"Error deleting from Google Sheets: {str(e)}"
+        return False, f"Error deleting: {e}"
 
 def get_occupancy_stats(target_date):
     df = load_reservations()
-    if df.empty:
-        return {"RTX 4090": 0.0, "H100": 0.0}
-        
+    if df.empty: return {"RTX 4090": 0.0, "H100": 0.0}
+    
     day_start = pd.to_datetime(target_date).replace(hour=0, minute=0, second=0).tz_localize(None)
     day_end = day_start + pd.Timedelta(days=1)
     
-    todays_res = df[
-        (df['Start'] < day_end) & 
-        (df['End'] > day_start)
-    ]
-    
-    if todays_res.empty:
-        return {"RTX 4090": 0.0, "H100": 0.0}
+    todays_res = df[(df['Start'] < day_end) & (df['End'] > day_start)]
+    if todays_res.empty: return {"RTX 4090": 0.0, "H100": 0.0}
 
-    stats = {}
+    rtx_count = todays_res[todays_res['GPU_Type'] == 'RTX 4090']['GPU_ID'].nunique()
+    h100_count = todays_res[todays_res['GPU_Type'] == 'H100']['GPU_ID'].nunique()
     
-    # RTX 4090 occupancy: (Unique RTX servers with reservations / 4) * 100
-    rtx_reserved_count = todays_res[todays_res['GPU_Type'] == 'RTX 4090']['GPU_ID'].nunique()
-    stats['RTX 4090'] = (rtx_reserved_count / 4.0) * 100
-    
-    # H100 occupancy: (Unique H100 servers with reservations / 2) * 100
-    h100_reserved_count = todays_res[todays_res['GPU_Type'] == 'H100']['GPU_ID'].nunique()
-    stats['H100'] = (h100_reserved_count / 2.0) * 100
-    
-    return stats
+    return {
+        "RTX 4090": (rtx_count / 4.0) * 100,
+        "H100": (h100_count / 2.0) * 100
+    }
