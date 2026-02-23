@@ -33,9 +33,27 @@ USERS = [
 ]
 
 # Initialize Google Sheets Connection
-conn = st.connection("gsheets", type=GSheetsConnection)
+def get_connection():
+    # Attempt to get configuration from secrets
+    config = st.secrets.get("connections", {}).get("gsheets", {})
+    url = config.get("spreadsheet") or config.get("url")
+    
+    if not url:
+        st.error("Google Sheets URL not found in secrets.toml ([connections.gsheets])")
+        return None
+    
+    try:
+        # Try passing both to be absolutely sure
+        return st.connection("gsheets", type=GSheetsConnection, spreadsheet=url, url=url)
+    except Exception as e:
+        st.error(f"Error connecting to Google Sheets: {e}")
+        return st.connection("gsheets", type=GSheetsConnection)
+
+conn = get_connection()
 
 def load_reservations():
+    if conn is None:
+        return pd.DataFrame(columns=["User", "GPU_ID", "GPU_Type", "Start", "End", "Project"])
     try:
         # TTL set to 0 to ensure we always get the latest data for reservations
         df = conn.read(ttl=0)
