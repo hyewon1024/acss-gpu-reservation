@@ -215,8 +215,8 @@ with tab1:
                 return dt.hour + dt.minute / 60.0 + dt.second / 3600.0
             
             day_df['Start_Dec'] = day_df['Clip_Start'].apply(to_decimal_hours)
-            day_df['End_Dec'] = day_df['Clip_End'].apply(to_decimal_hours)
-            day_df['Duration_Dec'] = day_df['End_Dec'] - day_df['Start_Dec']
+            # Use total_seconds to avoid 0-hour duration when reservation ends at midnight
+            day_df['Duration_Dec'] = (day_df['Clip_End'] - day_df['Clip_Start']).dt.total_seconds() / 3600.0
             
             # Create Figure
             fig_time = go.Figure()
@@ -368,12 +368,15 @@ with tab2:
         elif start_dt >= end_dt:
             st.error("❌ Error: End time must be after Start time.")
         else:
-            conflicts = check_conflicts(gpu_id_to_book, start_dt, end_dt)
+            with st.spinner("Checking GPU availability..."):
+                conflicts = check_conflicts(gpu_id_to_book, start_dt, end_dt)
+                
             if not conflicts:
-                success, msg = add_reservation(user, gpu_id_to_book, start_dt, end_dt, project)
+                with st.spinner("Saving reservation to Google Sheets..."):
+                    success, msg = add_reservation(user, gpu_id_to_book, start_dt, end_dt, project)
                 if success:
                     st.success(msg)
-                    st.cache_data.clear()
+                    # No need for st.cache_data.clear() as we use ttl=0
             else:
                 st.session_state.conflicts = conflicts
                 st.session_state.pending_booking = {

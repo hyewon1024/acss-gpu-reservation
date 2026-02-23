@@ -68,8 +68,10 @@ def load_reservations():
         st.error(f"Error loading data from Google Sheets: {e}")
         return pd.DataFrame(columns=["User", "GPU_ID", "GPU_Type", "Start", "End", "Project"])
 
-def check_conflicts(gpu_id, start_time, end_time):
-    df = load_reservations()
+def check_conflicts(gpu_id, start_time, end_time, df=None):
+    if df is None:
+        df = load_reservations()
+        
     if df.empty:
         return []
     
@@ -86,8 +88,11 @@ def check_conflicts(gpu_id, start_time, end_time):
     return conflicts
 
 def add_reservation(user, gpu_id, start_time, end_time, project, force=False):
+    # One read to rule them all
+    df = load_reservations()
+    
     if not force:
-        conflicts = check_conflicts(gpu_id, start_time, end_time)
+        conflicts = check_conflicts(gpu_id, start_time, end_time, df=df)
         if conflicts:
             return False, f"Conflict detected with: {', '.join(conflicts)}"
         
@@ -103,9 +108,7 @@ def add_reservation(user, gpu_id, start_time, end_time, project, force=False):
     }])
     
     try:
-        # Read current data and append
-        existing_df = load_reservations()
-        updated_df = pd.concat([existing_df, new_entry], ignore_index=True)
+        updated_df = pd.concat([df, new_entry], ignore_index=True)
         conn.update(data=updated_df)
         return True, "Reservation successful!"
     except Exception as e:
